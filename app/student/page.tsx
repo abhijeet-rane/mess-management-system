@@ -77,11 +77,18 @@ export default function StudentDashboard() {
         ? Math.ceil((new Date(profile.subscription_end_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
         : 0
       
-      if (daysRemaining <= 5 && daysRemaining > 0) {
+      if (daysRemaining > 0 && daysRemaining <= 5) {
         sampleNotifications.push({
           type: 'warning',
           title: 'Subscription Expiring Soon',
-          message: `Your subscription will expire in ${daysRemaining} days. Please renew to continue enjoying meals.`,
+          message: `Your subscription will expire in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}. Please renew to continue enjoying meals.`,
+          time: 'Just now'
+        })
+      } else if (daysRemaining <= 0 && profile?.subscription_end_date) {
+        sampleNotifications.push({
+          type: 'error',
+          title: 'Subscription Expired',
+          message: 'Your subscription has expired. Please contact the mess owner to renew your subscription.',
           time: 'Just now'
         })
       }
@@ -582,7 +589,7 @@ function DashboardContent({ profile, hasLunch, hasDinner, daysRemaining, totalMe
   totalMeals: number
   onNavigate: (tab: string) => void
   isLoading: boolean
-}) {
+}): React.ReactElement {
   const [animatedDays, setAnimatedDays] = useState(0)
   const [animatedMeals, setAnimatedMeals] = useState(0)
 
@@ -759,7 +766,7 @@ function DashboardContent({ profile, hasLunch, hasDinner, daysRemaining, totalMe
       </div>
 
       {/* Subscription Alert with Glow Effect */}
-      {daysRemaining <= 7 && (
+      {daysRemaining <= 7 && daysRemaining > 0 && (
         <div className={`relative p-6 rounded-2xl border-2 animate-in slide-in-from-bottom-2 duration-500 overflow-hidden group ${
           daysRemaining <= 3 
             ? 'bg-red-50 dark:bg-red-950/20 border-red-500/30' 
@@ -781,12 +788,33 @@ function DashboardContent({ profile, hasLunch, hasDinner, daysRemaining, totalMe
               <p className={`text-sm ${
                 daysRemaining <= 3 ? 'text-red-800 dark:text-red-200' : 'text-yellow-800 dark:text-yellow-200'
               }`}>
-                Your subscription will expire in {daysRemaining} days. Please contact the mess owner to renew your subscription.
+                Your subscription will expire in {daysRemaining} day{daysRemaining !== 1 ? 's' : ''}. Please contact the mess owner to renew your subscription.
               </p>
             </div>
           </div>
         </div>
       )}
+
+      {/* Subscription Expired Alert */}
+      {(() => {
+        const hasExpiredSubscription = daysRemaining <= 0 && profile && 'subscription_end_date' in profile && profile.subscription_end_date
+        return hasExpiredSubscription ? (
+          <div className="relative p-6 rounded-2xl border-2 bg-red-50 dark:bg-red-950/20 border-red-500/30 animate-in slide-in-from-bottom-2 duration-500 overflow-hidden group" style={{ animationDelay: '800ms' }}>
+            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-red-500/5" />
+            <div className="flex gap-4 relative z-10">
+              <XCircle className="w-6 h-6 flex-shrink-0 animate-pulse text-red-600 dark:text-red-400" />
+              <div>
+                <h4 className="font-bold mb-1 text-red-900 dark:text-red-100">
+                  Subscription Expired
+                </h4>
+                <p className="text-sm text-red-800 dark:text-red-200">
+                  Your subscription has expired. Please contact the mess owner immediately to renew your subscription and continue enjoying meals.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null
+      })()}
     </div>
   )
 }
@@ -853,7 +881,7 @@ function QuickActionCard({ icon: Icon, title, description, gradient, onClick, de
   gradient: string
   onClick: () => void
   delay: string
-}) {
+}): React.ReactElement {
   const [ripples, setRipples] = useState<Array<{ x: number; y: number; id: number }>>([])
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {

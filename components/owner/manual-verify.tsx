@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { UserCheck, Loader2, CheckCircle, Package, Hash } from 'lucide-react'
+import { UserCheck, Loader2, Package, Hash } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAsyncOperation } from '@/hooks/use-error-handler'
 import { ErrorMessage } from '@/components/ui/error-message'
@@ -15,14 +15,6 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
   const [verifyMode, setVerifyMode] = useState<'ID' | 'OTP'>('ID')
   const [shortId, setShortId] = useState('')
   const [otpCode, setOtpCode] = useState('')
-  const [lastVerified, setLastVerified] = useState<{
-    name: string
-    id: number
-    photo: string | null
-    mealType: string
-    method: string
-  } | null>(null)
-  const [showSuccess, setShowSuccess] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
   const { loading, error, execute, clearMessages } = useAsyncOperation('Verify Meal')
@@ -32,7 +24,6 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
     if (!shortId || shortId.trim() === '') return
     
     clearMessages()
-    setShowSuccess(false)
 
     await execute(async () => {
       // Get current hour to determine meal type
@@ -81,23 +72,12 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
 
       if (insertError) throw insertError
 
-      // Show success briefly
-      setLastVerified({
-        name: student.full_name,
-        id: student.unique_short_id,
-        photo: student.photo_url,
-        mealType,
-        method: 'Student ID'
-      })
-      setShowSuccess(true)
-
       if (onSuccess) {
         onSuccess({ student, mealType })
       }
 
       // Quick reset for next student
       setTimeout(() => {
-        setShowSuccess(false)
         setShortId('')
         if (inputRef.current) {
           inputRef.current.focus()
@@ -111,7 +91,6 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
     if (!otpCode || otpCode.trim() === '') return
     
     clearMessages()
-    setShowSuccess(false)
 
     await execute(async () => {
       // Get current hour to determine meal type
@@ -181,23 +160,12 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
 
       if (updateError) throw updateError
 
-      // Show success
-      setLastVerified({
-        name: student.full_name,
-        id: student.unique_short_id,
-        photo: student.photo_url,
-        mealType,
-        method: 'Parcel OTP'
-      })
-      setShowSuccess(true)
-
       if (onSuccess) {
         onSuccess({ student, mealType, method: 'OTP' })
       }
 
       // Quick reset
       setTimeout(() => {
-        setShowSuccess(false)
         setOtpCode('')
         if (inputRef.current) {
           inputRef.current.focus()
@@ -270,8 +238,8 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
                   clearMessages()
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="Enter ID & press Enter"
-                className="flex-1 px-6 py-4 rounded-lg border-2 border-input bg-background text-center text-4xl font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+                placeholder="Enter ID"
+                className="flex-1 px-4 py-3 rounded-lg border-2 border-input bg-background text-center text-2xl sm:text-3xl font-mono tracking-wider focus:outline-none focus:ring-4 focus:ring-primary/30 focus:border-primary focus:shadow-lg focus:shadow-primary/20 transition-all"
                 disabled={loading}
                 autoFocus
               />
@@ -279,7 +247,7 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
                 onClick={quickVerifyById}
                 disabled={loading || !shortId || shortId.trim() === ''}
                 size="lg"
-                className="px-8 text-lg"
+                className="px-6 text-base shrink-0"
               >
                 {loading ? (
                   <Loader2 className="w-6 h-6 animate-spin" />
@@ -291,8 +259,14 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
                 )}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-2 text-center">
-              {loading ? 'Verifying...' : 'Type ID and press Enter for fastest verification'}
+            <p className="text-xs text-muted-foreground mt-2 text-center flex items-center justify-center gap-2">
+              {loading ? 'Verifying...' : (
+                <>
+                  <span>Type ID and press</span>
+                  <kbd className="px-2 py-1 bg-accent rounded text-xs font-mono border border-border">Enter</kbd>
+                  <span>for fastest verification</span>
+                </>
+              )}
             </p>
           </div>
         ) : (
@@ -311,8 +285,8 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
                   clearMessages()
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="Enter OTP & press Enter"
-                className="flex-1 px-6 py-4 rounded-lg border-2 border-input bg-background text-center text-4xl font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+                placeholder="Enter OTP"
+                className="flex-1 px-4 py-3 rounded-lg border-2 border-input bg-background text-center text-2xl sm:text-3xl font-mono tracking-wider focus:outline-none focus:ring-4 focus:ring-primary/30 focus:border-primary focus:shadow-lg focus:shadow-primary/20 transition-all"
                 disabled={loading}
                 autoFocus
                 maxLength={6}
@@ -321,7 +295,7 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
                 onClick={quickVerifyByOTP}
                 disabled={loading || !otpCode || otpCode.trim() === ''}
                 size="lg"
-                className="px-8 text-lg"
+                className="px-6 text-base shrink-0"
               >
                 {loading ? (
                   <Loader2 className="w-6 h-6 animate-spin" />
@@ -333,8 +307,13 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
                 )}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground mt-2 text-center">
-              {loading ? 'Verifying parcel OTP...' : 'Enter the 6-character OTP provided by the student'}
+            <p className="text-xs text-muted-foreground mt-2 text-center flex items-center justify-center gap-2">
+              {loading ? 'Verifying parcel OTP...' : (
+                <>
+                  <span>Enter the 6-character OTP and press</span>
+                  <kbd className="px-2 py-1 bg-accent rounded text-xs font-mono border border-border">Enter</kbd>
+                </>
+              )}
             </p>
           </div>
         )}
@@ -347,32 +326,15 @@ export function ManualVerify({ onSuccess }: ManualVerifyProps) {
         )}
       </div>
 
-      {/* Compact success indicator */}
-      {showSuccess && lastVerified && (
-        <div className="bg-green-50 dark:bg-green-900/20 border-2 border-green-500 rounded-xl p-4 animate-in slide-in-from-top-2 fade-in">
-          <div className="flex items-center gap-3">
-            <CheckCircle className="w-8 h-8 text-green-600 dark:text-green-400 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="font-bold text-green-900 dark:text-green-100">
-                ✓ {lastVerified.name}
-              </p>
-              <p className="text-sm text-green-700 dark:text-green-300">
-                ID: {lastVerified.id} • {lastVerified.mealType} • {lastVerified.method}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Quick stats */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-accent/50 rounded-lg p-4 text-center">
+      <div className="grid grid-cols-2 gap-4 mt-6">
+        <div className="bg-accent/50 rounded-lg p-4 text-center hover:bg-accent transition-colors">
           <p className="text-2xl font-bold text-primary">
             {new Date().getHours() < 16 ? 'LUNCH' : 'DINNER'}
           </p>
           <p className="text-xs text-muted-foreground mt-1">Current Meal</p>
         </div>
-        <div className="bg-accent/50 rounded-lg p-4 text-center">
+        <div className="bg-accent/50 rounded-lg p-4 text-center hover:bg-accent transition-colors">
           <p className="text-2xl font-bold">
             {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
           </p>
