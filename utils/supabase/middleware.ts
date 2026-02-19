@@ -30,23 +30,24 @@ export async function updateSession(request: NextRequest) {
   )
 
   // If the URL has a `code` query parameter (from Supabase PKCE OAuth flow),
-  // exchange it for a session and redirect to a clean URL without the code.
+  // try to exchange it for a session, then always redirect to a clean URL.
+  // The code is one-time use — if the callback route already consumed it,
+  // the exchange will fail, but we still need to strip it from the URL.
   const code = request.nextUrl.searchParams.get('code')
   if (code && !request.nextUrl.pathname.startsWith('/auth/callback')) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    // Attempt exchange (may fail if already consumed by /auth/callback)
+    await supabase.auth.exchangeCodeForSession(code)
 
-    if (!error) {
-      // Build a clean URL without the `code` param
-      const cleanUrl = request.nextUrl.clone()
-      cleanUrl.searchParams.delete('code')
+    // Always strip the `code` param from the URL
+    const cleanUrl = request.nextUrl.clone()
+    cleanUrl.searchParams.delete('code')
 
-      // Copy auth cookies onto the redirect response
-      const redirectResponse = NextResponse.redirect(cleanUrl)
-      supabaseResponse.cookies.getAll().forEach((cookie) => {
-        redirectResponse.cookies.set(cookie.name, cookie.value)
-      })
-      return redirectResponse
-    }
+    // Copy auth cookies onto the redirect response
+    const redirectResponse = NextResponse.redirect(cleanUrl)
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value)
+    })
+    return redirectResponse
   }
 
   // IMPORTANT: Avoid writing any logic between createServerClient and
