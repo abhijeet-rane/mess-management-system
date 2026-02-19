@@ -29,6 +29,26 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
+  // If the URL has a `code` query parameter (from Supabase PKCE OAuth flow),
+  // exchange it for a session and redirect to a clean URL without the code.
+  const code = request.nextUrl.searchParams.get('code')
+  if (code && !request.nextUrl.pathname.startsWith('/auth/callback')) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (!error) {
+      // Build a clean URL without the `code` param
+      const cleanUrl = request.nextUrl.clone()
+      cleanUrl.searchParams.delete('code')
+
+      // Copy auth cookies onto the redirect response
+      const redirectResponse = NextResponse.redirect(cleanUrl)
+      supabaseResponse.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie.name, cookie.value)
+      })
+      return redirectResponse
+    }
+  }
+
   // IMPORTANT: Avoid writing any logic between createServerClient and
   // supabase.auth.getUser(). A simple mistake could make it very hard to debug
   // issues with users being randomly logged out.
