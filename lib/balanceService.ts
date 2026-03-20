@@ -47,7 +47,7 @@ export async function fetchBalanceDaysData(userId: string): Promise<BalanceDaysI
     const start = new Date(subscription_start_date)
     const end = new Date(subscription_end_date)
     const diffMs = end.getTime() - start.getTime()
-    totalDays = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)))
+    totalDays = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1)
   }
 
   // consumed_days = exact count from Supabase
