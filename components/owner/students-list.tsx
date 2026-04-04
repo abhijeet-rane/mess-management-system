@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useReducer, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { 
@@ -16,7 +16,10 @@ import {
   Calendar,
   TrendingUp,
   X,
-  FileText
+  FileText,
+  CreditCard,
+  Plus,
+  Utensils
 } from 'lucide-react'
 import { useAsyncOperation } from '@/hooks/use-error-handler'
 import { validateRequired, validateNumberRange, parseError, ErrorResult } from '@/lib/error-handler'
@@ -24,12 +27,74 @@ import { ErrorMessage, SuccessMessage } from '@/components/ui/error-message'
 import { LoadingState } from '@/components/ui/loading-state'
 import { generateProfessionalReport } from '@/lib/professional-report-generator'
 import { generateAttendanceExcel } from '@/lib/excel-generator'
+import { MealPlanBadge } from '@/components/shared/meal-plan-badge'
+import { FeePaymentStatus, PAYMENT_SUCCESS_TIMEOUT, MAX_NOTE_LENGTH, MIN_AMOUNT, MAX_AMOUNT, type FeePayment } from '@/components/shared/fee-payment-status'
+import { MessCycleTracker } from '@/components/shared/mess-cycle-tracker'
+import { WeeklyProgressBar } from '@/components/shared/weekly-progress-bar'
+import { getPayableAmount, DEFAULT_PRICING, type MealPlanPricing } from '@/lib/pricing-utils'
+import { SETTINGS_ID } from '@/lib/constants'
 import { 
   getMessPeriodDateRange, 
   getPeriodTypeLabel,
   type DateRangeType 
 } from '@/lib/mess-period-utils'
 import { fetchReportData, transformForPDFReport, transformForExcelReport } from '@/lib/report-data-fetcher'
+
+type PaymentMode = 'UPI' | 'CASH'
+
+interface FeePaymentState {
+  payments: FeePayment[]
+  isLoading: boolean
+  error: string | null
+  showForm: boolean
+  formAmount: string
+  formMode: PaymentMode
+  formNote: string
+  isSaving: boolean
+  saveError: string | null
+  saveSuccess: boolean
+}
+
+const INITIAL_FEE_STATE: FeePaymentState = {
+  payments: [], isLoading: false, error: null,
+  showForm: false, formAmount: '',
+  formMode: 'CASH', formNote: '', isSaving: false,
+  saveError: null, saveSuccess: false,
+}
+
+type FeeAction =
+  | { type: 'FETCH_START' }
+  | { type: 'FETCH_SUCCESS'; payments: FeePayment[] }
+  | { type: 'FETCH_ERROR'; error: string }
+  | { type: 'TOGGLE_FORM' }
+  | { type: 'CLOSE_FORM' }
+  | { type: 'SET_AMOUNT'; value: string }
+  | { type: 'SET_MODE'; value: PaymentMode }
+  | { type: 'SET_NOTE'; value: string }
+  | { type: 'SAVE_START' }
+  | { type: 'SAVE_SUCCESS'; payments: FeePayment[] }
+  | { type: 'SAVE_ERROR'; error: string }
+  | { type: 'CLEAR_SUCCESS' }
+  | { type: 'RESET' }
+
+function feeReducer(state: FeePaymentState, action: FeeAction): FeePaymentState {
+  switch (action.type) {
+    case 'FETCH_START': return { ...state, isLoading: true, error: null }
+    case 'FETCH_SUCCESS': return { ...state, isLoading: false, payments: action.payments }
+    case 'FETCH_ERROR': return { ...state, isLoading: false, error: action.error }
+    case 'TOGGLE_FORM': return { ...state, showForm: !state.showForm, saveError: null }
+    case 'CLOSE_FORM': return { ...state, showForm: false, saveError: null, formAmount: '', formNote: '', formMode: 'CASH' }
+    case 'SET_AMOUNT': return { ...state, formAmount: action.value }
+    case 'SET_MODE': return { ...state, formMode: action.value }
+    case 'SET_NOTE': return { ...state, formNote: action.value.slice(0, MAX_NOTE_LENGTH) }
+    case 'SAVE_START': return { ...state, isSaving: true, saveError: null }
+    case 'SAVE_SUCCESS': return { ...state, isSaving: false, payments: action.payments, showForm: false, saveSuccess: true, formAmount: '', formNote: '', formMode: 'CASH' }
+    case 'SAVE_ERROR': return { ...state, isSaving: false, saveError: action.error }
+    case 'CLEAR_SUCCESS': return { ...state, saveSuccess: false }
+    case 'RESET': return INITIAL_FEE_STATE
+    default: return state
+  }
+}
 
 interface Student {
   id: string
@@ -41,6 +106,14 @@ interface Student {
   meal_plan?: 'L' | 'D' | 'DL'
   is_active: boolean
   subscription_end_date?: string
+  /** End date sourced from the active mess_period (preferred over subscription_end_date) */
+  mess_end_date?: string
+  /** Start date sourced from the active mess_period */
+  mess_start_date?: string
+  /** Original end date before leave extensions */
+  mess_original_end_date?: string
+  /** Approved leave days count for the current mess period */
+  approved_leave_days?: number
   profile_edit_allowed?: boolean
   photo_update_allowed?: boolean
   editable_fields?: string[]
@@ -97,7 +170,13 @@ export function StudentsList() {
     start_date: string
     end_date: string
     original_end_date: string
+    meal_plan?: string
   } | null>(null)
+  const [pricing, setPricing] = useState<MealPlanPricing>(DEFAULT_PRICING)
+
+  // Fee payment state via reducer
+  const [fee, dispatchFee] = useReducer(feeReducer, INITIAL_FEE_STATE)
+  const feeSuccessTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   // Permission form state
   const [permissionForm, setPermissionForm] = useState({
@@ -107,12 +186,21 @@ export function StudentsList() {
     time_value: '24',
     time_unit: 'hours' as 'minutes' | 'hours'
   })
-  
+
   // Student edit form state
   const [studentEditForm, setStudentEditForm] = useState({
     full_name: '',
     phone: '',
     address: ''
+  })
+
+  // Mess period edit state
+  const [isEditingMessPeriod, setIsEditingMessPeriod] = useState(false)
+  const [messPeriodSaving, setMessPeriodSaving] = useState(false)
+  const [messPeriodSaveError, setMessPeriodSaveError] = useState<string | null>(null)
+  const [messPeriodEditForm, setMessPeriodEditForm] = useState({
+    meal_plan: 'DL' as 'L' | 'D' | 'DL',
+    start_date: '',
   })
   
   const supabase = createClient()
@@ -122,14 +210,60 @@ export function StudentsList() {
     setFetchError(null)
     
     try {
+      const today = new Date().toISOString().split('T')[0]
+      
       const { data, error } = await supabase
         .from('users')
-        .select('*')
+        .select('*, mess_periods!mess_periods_user_id_fkey(id, meal_plan, is_active, end_date, start_date, original_end_date)')
         .eq('role', 'STUDENT')
         .order('unique_short_id', { ascending: true })
 
       if (error) throw error
-      setStudents(data || [])
+      
+      // Merge active mess_period meal_plan and end_date into each student
+      // Calculate active status based on mess_periods.end_date >= today AND mess_periods.is_active = true
+      const merged = await Promise.all((data || []).map(async (s: Record<string, unknown>) => {
+        const periods = s.mess_periods as { id: string; meal_plan: string; is_active: boolean; end_date: string; start_date: string; original_end_date: string }[] | null
+        const activePeriod = periods?.find(p => p.is_active)
+        
+        // Calculate active status: has active period AND end_date >= today
+        const calculatedIsActive = activePeriod 
+          ? activePeriod.end_date >= today && activePeriod.is_active
+          : false
+        
+        // Fetch approved leave days for the active mess period
+        let approvedLeaveDays = 0
+        if (activePeriod) {
+          const { data: leavesData } = await supabase
+            .from('leaves')
+            .select('start_date, end_date')
+            .eq('user_id', s.id)
+            .eq('is_approved', true)
+            .gte('end_date', activePeriod.start_date)
+            .lte('start_date', activePeriod.original_end_date)
+          
+          // Calculate total leave days
+          if (leavesData && leavesData.length > 0) {
+            approvedLeaveDays = leavesData.reduce((total, leave) => {
+              const start = new Date(leave.start_date)
+              const end = new Date(leave.end_date)
+              const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+              return total + days
+            }, 0)
+          }
+        }
+        
+        return {
+          ...s,
+          meal_plan: activePeriod?.meal_plan ?? s.meal_plan,
+          mess_end_date: activePeriod?.end_date ?? undefined,
+          mess_start_date: activePeriod?.start_date ?? undefined,
+          mess_original_end_date: activePeriod?.original_end_date ?? undefined,
+          approved_leave_days: approvedLeaveDays,
+          is_active: calculatedIsActive, // Override with calculated status
+        } as Student
+      }))
+      setStudents(merged)
     } catch (err) {
       console.error('Error fetching students:', err)
       setFetchError(parseError(err))
@@ -141,6 +275,25 @@ export function StudentsList() {
   useEffect(() => {
     fetchStudents()
   }, [fetchStudents])
+
+  // Load meal plan pricing from DB once
+  useEffect(() => {
+    supabase
+      .from('mess_settings')
+      .select('lunch_price, dinner_price, both_price')
+      .eq('id', SETTINGS_ID)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setPricing({
+            lunch_price: data.lunch_price ?? DEFAULT_PRICING.lunch_price,
+            dinner_price: data.dinner_price ?? DEFAULT_PRICING.dinner_price,
+            both_price: data.both_price ?? DEFAULT_PRICING.both_price,
+          })
+        }
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -176,22 +329,163 @@ export function StudentsList() {
     setIsEditingStudent(false)
     
     // Fetch active mess period for the student
+    let activePeriod: { start_date: string; end_date: string; original_end_date: string; meal_plan?: string } | null = null
     try {
-      const { data: activePeriod } = await supabase
+      const { data, error: periodError } = await supabase
         .from('mess_periods')
-        .select('start_date, end_date, original_end_date')
+        .select('start_date, end_date, original_end_date, meal_plan')
         .eq('user_id', student.id)
         .eq('is_active', true)
         .maybeSingle()
-      
+      activePeriod = periodError ? null : data
       setMessPeriod(activePeriod)
     } catch (err) {
       console.error('Error fetching mess period:', err)
       setMessPeriod(null)
     }
-    
+
+    // Pre-fill the mess period edit form from the active period
+    setIsEditingMessPeriod(false)
+    setMessPeriodSaveError(null)
+    setMessPeriodEditForm({
+      meal_plan: (activePeriod?.meal_plan ?? 'DL') as 'L' | 'D' | 'DL',
+      start_date: activePeriod?.start_date
+        ? activePeriod.start_date.split('T')[0]
+        : '',
+    })
+
+    // Fetch fee payments and open modal
+    dispatchFee({ type: 'RESET' })
     setShowDetailModal(true)
+    fetchFeePayments(student.id)
   }
+
+  const fetchFeePayments = useCallback(async (studentId: string) => {
+    dispatchFee({ type: 'FETCH_START' })
+    
+    // First, get the active mess period ID
+    const { data: messPeriodData, error: periodError } = await supabase
+      .from('mess_periods')
+      .select('id')
+      .eq('user_id', studentId)
+      .eq('is_active', true)
+      .maybeSingle()
+    
+    if (periodError) {
+      dispatchFee({ type: 'FETCH_ERROR', error: 'Failed to load mess period' })
+      return
+    }
+    
+    if (!messPeriodData) {
+      dispatchFee({ type: 'FETCH_ERROR', error: 'No active mess period found' })
+      return
+    }
+    
+    // Now query payments by mess_period_id
+    const { data, error } = await supabase
+      .from('fee_payments')
+      .select('*')
+      .eq('user_id', studentId)
+      .eq('mess_period_id', messPeriodData.id)
+      .order('installment_number', { ascending: true })
+      
+    if (error) {
+      dispatchFee({ type: 'FETCH_ERROR', error: parseError(error).message })
+      return
+    }
+    dispatchFee({ type: 'FETCH_SUCCESS', payments: data || [] })
+  }, [supabase])
+
+  const handleAddPayment = async () => {
+    if (!selectedStudent) return
+
+    const amountNum = parseFloat(fee.formAmount)
+    const amountError = validateNumberRange(amountNum, MIN_AMOUNT, MAX_AMOUNT, 'Amount')
+    if (amountError) { dispatchFee({ type: 'SAVE_ERROR', error: amountError.message }); return }
+
+    // Get the active mess period ID and meal plan
+    const { data: messPeriodData, error: periodError } = await supabase
+      .from('mess_periods')
+      .select('id, meal_plan')
+      .eq('user_id', selectedStudent.id)
+      .eq('is_active', true)
+      .maybeSingle()
+    
+    if (periodError || !messPeriodData) {
+      dispatchFee({ type: 'SAVE_ERROR', error: 'No active mess period found' })
+      return
+    }
+
+    // Calculate total payable based on meal plan
+    const mealPlan = messPeriodData.meal_plan as 'L' | 'D' | 'DL'
+    const totalPayable = getPayableAmount(mealPlan, pricing)
+    
+    // Calculate total already paid
+    const totalPaid = fee.payments.reduce((sum, p) => sum + Number(p.amount), 0)
+    
+    // Auto-determine installment number
+    const paidInstallments = new Set(fee.payments.map(p => p.installment_number))
+    const installmentNumber: 1 | 2 = paidInstallments.has(1) ? 2 : 1
+    
+    // Validate against overpayment
+    if (totalPayable && (totalPaid + amountNum) > totalPayable) {
+      const remaining = totalPayable - totalPaid
+      dispatchFee({ 
+        type: 'SAVE_ERROR', 
+        error: `Amount exceeds remaining balance. Maximum allowed: ₹${remaining.toLocaleString('en-IN')}` 
+      })
+      return
+    }
+
+    // CRITICAL: If this is the 2nd installment, it MUST complete the payment
+    if (installmentNumber === 2 && totalPayable) {
+      const remaining = totalPayable - totalPaid
+      if (amountNum !== remaining) {
+        dispatchFee({ 
+          type: 'SAVE_ERROR', 
+          error: `2nd installment must complete the payment. Required amount: ₹${remaining.toLocaleString('en-IN')}` 
+        })
+        return
+      }
+    }
+
+    dispatchFee({ type: 'SAVE_START' })
+    const { error } = await supabase
+      .from('fee_payments')
+      .insert({
+        user_id: selectedStudent.id,
+        mess_period_id: messPeriodData.id,
+        installment_number: installmentNumber,
+        amount: amountNum,
+        payment_mode: fee.formMode,
+        note: fee.formNote || null,
+      })
+
+    if (error) {
+      const parsed = parseError(error)
+      dispatchFee({
+        type: 'SAVE_ERROR',
+        error: error.code === '23505' ? 'Installment already recorded for this period.' : parsed.message,
+      })
+      return
+    }
+
+    // Refresh payments by mess_period_id
+    const { data: updated } = await supabase
+      .from('fee_payments')
+      .select('*')
+      .eq('user_id', selectedStudent.id)
+      .eq('mess_period_id', messPeriodData.id)
+      .order('installment_number', { ascending: true })
+
+    dispatchFee({ type: 'SAVE_SUCCESS', payments: updated || [] })
+    if (feeSuccessTimer.current) clearTimeout(feeSuccessTimer.current)
+    feeSuccessTimer.current = setTimeout(() => dispatchFee({ type: 'CLEAR_SUCCESS' }), PAYMENT_SUCCESS_TIMEOUT)
+  }
+
+  useEffect(() => {
+    return () => { if (feeSuccessTimer.current) clearTimeout(feeSuccessTimer.current) }
+  }, [])
 
   const handleSaveStudentEdit = async () => {
     if (!selectedStudent) return
@@ -201,12 +495,22 @@ export function StudentsList() {
     // Validate required fields
     const validationError = validateRequired(studentEditForm, ['full_name'])
     if (validationError) {
-      // Show error in edit section
+      // Show validation error using the error handler
+      await executeEdit(async () => {
+        throw new Error(validationError.message)
+      })
       return
     }
     
     await executeEdit(async () => {
-      const { error } = await supabase
+      console.log('Attempting to update student:', selectedStudent.id)
+      console.log('Update data:', {
+        full_name: studentEditForm.full_name,
+        phone: studentEditForm.phone,
+        address: studentEditForm.address
+      })
+      
+      const { data, error } = await supabase
         .from('users')
         .update({
           full_name: studentEditForm.full_name,
@@ -214,8 +518,18 @@ export function StudentsList() {
           address: studentEditForm.address
         })
         .eq('id', selectedStudent.id)
+        .select()
 
-      if (error) throw error
+      console.log('Update response:', { data, error })
+
+      if (error) {
+        console.error('Update error:', error)
+        throw error
+      }
+      
+      if (!data || data.length === 0) {
+        throw new Error('No rows were updated. This might be a permissions issue.')
+      }
 
       setIsEditingStudent(false)
       
@@ -400,22 +714,55 @@ export function StudentsList() {
     }
   }
 
-  const getSubscriptionProgress = (student: Student) => {
-    if (!student.subscription_end_date) return 0
-    const now = new Date().getTime()
-    const end = new Date(student.subscription_end_date).getTime()
-    const start = new Date(student.created_at).getTime()
-    const total = end - start
-    const elapsed = now - start
-    return Math.max(0, Math.min(100, (elapsed / total) * 100))
+  const getDaysRemaining = (student: Student) => {
+    // Use original_end_date (base 30 days) for calculation, not the extended end_date
+    const originalEndDate = student.mess_original_end_date || student.mess_end_date || student.subscription_end_date
+    if (!originalEndDate) return null
+    
+    // Get today's date at midnight
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    const originalEnd = new Date(originalEndDate)
+    originalEnd.setHours(0, 0, 0, 0)
+    
+    // Calculate base days remaining (from original 30-day period)
+    const msRemaining = originalEnd.getTime() - today.getTime()
+    const baseDays = Math.floor(msRemaining / (1000 * 60 * 60 * 24)) + 1
+    
+    // Add approved leave days to the display
+    const approvedLeaveDays = student.approved_leave_days || 0
+    const totalDaysRemaining = Math.max(0, baseDays) + approvedLeaveDays
+    
+    return totalDaysRemaining
   }
 
-  const getDaysRemaining = (student: Student) => {
-    if (!student.subscription_end_date) return null
-    const now = new Date().getTime()
-    const end = new Date(student.subscription_end_date).getTime()
-    const days = Math.max(0, Math.ceil((end - now) / (1000 * 60 * 60 * 24)))
-    return days
+  const getDaysElapsed = (student: Student) => {
+    // Calculate days consumed from the total 30-day period
+    // Days consumed = 30 - total days remaining (including approved leave days)
+    const originalEndDate = student.mess_original_end_date || student.mess_end_date || student.subscription_end_date
+    if (!originalEndDate) return 0
+    
+    // Get today's date at midnight for accurate day counting
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    const originalEnd = new Date(originalEndDate)
+    originalEnd.setHours(0, 0, 0, 0)
+    
+    // Calculate base days remaining (from original 30-day period, without leave days)
+    const msRemaining = originalEnd.getTime() - today.getTime()
+    const baseDaysRemaining = Math.floor(msRemaining / (1000 * 60 * 60 * 24)) + 1
+    
+    // Add approved leave days to get total days remaining
+    const approvedLeaveDays = student.approved_leave_days || 0
+    const totalDaysRemaining = Math.max(0, baseDaysRemaining) + approvedLeaveDays
+    
+    // Days consumed = 30 - total days remaining
+    const daysConsumed = 30 - totalDaysRemaining
+    
+    // Clamp between 0 and 30
+    return Math.max(0, Math.min(30, daysConsumed))
   }
 
   const filteredStudents = students.filter(student => {
@@ -688,6 +1035,7 @@ export function StudentsList() {
                       <SortIcon column="status" />
                     </div>
                   </th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold">Meal Plan</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold">Subscription</th>
                   <th 
                     className="px-6 py-4 text-left text-sm font-semibold cursor-pointer hover:bg-accent/50 transition-colors group"
@@ -704,7 +1052,6 @@ export function StudentsList() {
               <tbody className="divide-y divide-border">
                 {paginatedStudents.map((student, index) => {
                   const daysRemaining = getDaysRemaining(student)
-                  const progress = getSubscriptionProgress(student)
                   
                   return (
                     <tr 
@@ -773,38 +1120,36 @@ export function StudentsList() {
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        {student.subscription_end_date ? (
-                          <div className="space-y-1">
-                            <span className="text-sm text-muted-foreground block">
-                              Until {new Date(student.subscription_end_date).toLocaleDateString('en-IN')}
-                            </span>
-                            {daysRemaining !== null && (
-                              <>
-                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                                  <div 
-                                    className={`h-full rounded-full transition-all duration-1000 ${
-                                      daysRemaining > 7 ? 'bg-green-500' :
-                                      daysRemaining > 3 ? 'bg-yellow-500' : 'bg-red-500'
-                                    }`}
-                                    style={{ 
-                                      width: `${Math.max(0, 100 - progress)}%`,
-                                      animation: 'progressGrow 1s ease-out'
-                                    }}
-                                  />
-                                </div>
-                                <span className={`text-xs ${
-                                  daysRemaining > 7 ? 'text-green-600 dark:text-green-400' :
-                                  daysRemaining > 3 ? 'text-yellow-600 dark:text-yellow-400' : 
-                                  'text-red-600 dark:text-red-400'
-                                }`}>
-                                  {daysRemaining > 0 ? `${daysRemaining} days left` : 'Expired'}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">Not set</span>
-                        )}
+                        <MealPlanBadge plan={student.meal_plan} />
+                      </td>
+                      <td className="px-6 py-4">
+                        {(() => {
+                          // Use mess_end_date (from mess_periods) as primary, fall back to subscription_end_date
+                          const endDate = student.mess_end_date || student.subscription_end_date
+                          if (!endDate) return <span className="text-sm text-muted-foreground">Not set</span>
+                          
+                          const daysElapsed = getDaysElapsed(student)
+                          
+                          return (
+                            <div className="space-y-1">
+                              <span className="text-sm text-muted-foreground block">
+                                Until {new Date(endDate).toLocaleDateString('en-IN')}
+                              </span>
+                              {daysRemaining !== null && (
+                                <>
+                                  <WeeklyProgressBar daysElapsed={daysElapsed} />
+                                  <span className={`text-xs ${
+                                    daysRemaining > 7 ? 'text-green-600 dark:text-green-400' :
+                                    daysRemaining > 3 ? 'text-yellow-600 dark:text-yellow-400' :
+                                    'text-red-600 dark:text-red-400'
+                                  }`}>
+                                    {daysRemaining > 0 ? `${daysRemaining} days left` : 'Expired'}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1012,7 +1357,7 @@ export function StudentsList() {
                     
                     {/* Manual Active Status Toggle */}
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Manual Override:</span>
+                      <span className="text-xs text-muted-foreground">Manual Override (Mess Period):</span>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input
                           type="checkbox"
@@ -1020,10 +1365,12 @@ export function StudentsList() {
                           onChange={async (e) => {
                             const newStatus = e.target.checked
                             try {
+                              // Update mess_periods.is_active instead of users.is_active
                               const { error } = await supabase
-                                .from('users')
+                                .from('mess_periods')
                                 .update({ is_active: newStatus })
-                                .eq('id', selectedStudent.id)
+                                .eq('user_id', selectedStudent.id)
+                                .eq('is_active', !newStatus) // Update the currently active/inactive period
                               
                               if (error) throw error
                               
@@ -1032,7 +1379,7 @@ export function StudentsList() {
                               await fetchStudents()
                             } catch (err) {
                               console.error('Error updating status:', err)
-                              alert('Failed to update status')
+                              alert('Failed to update mess period status')
                             }
                           }}
                           className="sr-only peer"
@@ -1097,46 +1444,243 @@ export function StudentsList() {
                       )}
                     </div>
 
-                    {/* Subscription Start (from mess_periods) */}
-                    <div className="bg-muted/50 rounded-lg p-3">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Subscription Start</p>
-                      <p className="font-semibold text-sm">
-                        {messPeriod?.start_date 
-                          ? new Date(messPeriod.start_date).toLocaleDateString('en-IN', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric'
-                            })
-                          : 'Not set'}
-                      </p>
+                    {/* ── Meal Plan & Subscription (editable by owner) ── */}
+                    <div className="border border-border rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-2 bg-gradient-to-r from-primary/10 to-transparent border-b border-border">
+                        <div className="flex items-center gap-2">
+                          <Utensils className="w-4 h-4 text-primary" />
+                          <span className="text-sm font-semibold">Meal Plan &amp; Subscription</span>
+                        </div>
+                        {!isEditingMessPeriod ? (
+                          <button
+                            onClick={() => {
+                              setIsEditingMessPeriod(true)
+                              setMessPeriodSaveError(null)
+                              setMessPeriodEditForm({
+                                meal_plan: (messPeriod?.meal_plan ?? selectedStudent.meal_plan ?? 'DL') as 'L' | 'D' | 'DL',
+                                start_date: messPeriod?.start_date
+                                  ? messPeriod.start_date.split('T')[0]
+                                  : '',
+                              })
+                            }}
+                            className="flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                            Edit
+                          </button>
+                        ) : (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => { setIsEditingMessPeriod(false); setMessPeriodSaveError(null) }}
+                              className="text-xs px-2 py-1 border border-input rounded hover:bg-accent transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              disabled={messPeriodSaving || !messPeriodEditForm.start_date}
+                              onClick={async () => {
+                                if (!selectedStudent) return
+                                setMessPeriodSaving(true)
+                                setMessPeriodSaveError(null)
+                                try {
+                                  // Get previous mess period's extra meals count (debt)
+                                  const { data: prevPeriod } = await supabase
+                                    .from('mess_periods')
+                                    .select('extra_meals_count')
+                                    .eq('user_id', selectedStudent.id)
+                                    .eq('is_active', true)
+                                    .maybeSingle()
+                                  
+                                  const extraMealsDebt = prevPeriod?.extra_meals_count || 0
+                                  const baseDays = 30
+                                  const purchasedDays = baseDays
+                                  const deductedDays = extraMealsDebt
+                                  const creditedDays = Math.max(0, purchasedDays - deductedDays)
+                                  
+                                  // Show transparency message if there's debt
+                                  if (extraMealsDebt > 0) {
+                                    const confirmMsg = `Recharge Summary:\n\nPurchased: ${purchasedDays} days\nDeducted: ${deductedDays} days (previous extra meals debt)\nCredited: ${creditedDays} days\n\nDo you want to proceed?`
+                                    if (!confirm(confirmMsg)) {
+                                      setMessPeriodSaving(false)
+                                      return
+                                    }
+                                  }
+                                  
+                                  // Fetch approved leave days for this student to extend the end date
+                                  const startDateStr = messPeriodEditForm.start_date
+                                  const baseEnd = new Date(startDateStr)
+                                  // Use credited days instead of fixed 30
+                                  baseEnd.setDate(baseEnd.getDate() + creditedDays - 1)
+                                  const baseEndStr = baseEnd.toISOString().split('T')[0]
+
+                                  // Get approved leaves from DB
+                                  const { data: leavesData } = await supabase
+                                    .from('leaves')
+                                    .select('start_date, end_date')
+                                    .eq('user_id', selectedStudent.id)
+                                    .eq('is_approved', true)
+                                    .gte('end_date', startDateStr)
+                                    .lte('start_date', baseEndStr)
+
+                                  // Sum leave days that overlap with the base credited-day window
+                                  const periodStart = new Date(startDateStr)
+                                  const periodEnd = new Date(baseEndStr)
+                                  const totalLeaveDays = (leavesData ?? []).reduce((sum, leave) => {
+                                    const ls = new Date(leave.start_date)
+                                    const le = new Date(leave.end_date)
+                                    const os = ls > periodStart ? ls : periodStart
+                                    const oe = le < periodEnd ? le : periodEnd
+                                    if (os <= oe) {
+                                      return sum + Math.round((oe.getTime() - os.getTime()) / 86400000) + 1
+                                    }
+                                    return sum
+                                  }, 0)
+
+                                  // end_date = start + (credited days - 1) + leave days
+                                  const computedEnd = new Date(startDateStr)
+                                  computedEnd.setDate(computedEnd.getDate() + creditedDays - 1 + totalLeaveDays)
+                                  const computedEndStr = computedEnd.toISOString().split('T')[0]
+
+                                  // Always deactivate ALL existing active periods first
+                                  // (prevents duplicate is_active=true rows which cause wrong meal plan display)
+                                  const { error: deactivateError } = await supabase
+                                    .from('mess_periods')
+                                    .update({ is_active: false })
+                                    .eq('user_id', selectedStudent.id)
+                                    .eq('is_active', true)
+                                  if (deactivateError) throw deactivateError
+
+                                  // Insert a fresh active period with extra_meals_count reset to 0
+                                  const { error } = await supabase
+                                    .from('mess_periods')
+                                    .insert({
+                                      user_id: selectedStudent.id,
+                                      meal_plan: messPeriodEditForm.meal_plan,
+                                      start_date: startDateStr,
+                                      end_date: computedEndStr,
+                                      original_end_date: baseEndStr,
+                                      is_active: true,
+                                      extra_meals_count: 0, // Reset debt for new period
+                                    })
+                                  if (error) throw error
+                                  // Refetch the active period to update the modal
+                                  const { data: updated } = await supabase
+                                    .from('mess_periods')
+                                    .select('start_date, end_date, original_end_date, meal_plan')
+                                    .eq('user_id', selectedStudent.id)
+                                    .eq('is_active', true)
+                                    .maybeSingle()
+                                  setMessPeriod(updated ?? null)
+                                  // Also update selected student's meal_plan locally
+                                  setSelectedStudent({ ...selectedStudent, meal_plan: messPeriodEditForm.meal_plan })
+                                  // Refresh the students table too
+                                  await fetchStudents()
+                                  setIsEditingMessPeriod(false)
+                                } catch (err) {
+                                  setMessPeriodSaveError(err instanceof Error ? err.message : 'Failed to save. Please try again.')
+                                } finally {
+                                  setMessPeriodSaving(false)
+                                }
+                              }}
+                              className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                            >
+                              {messPeriodSaving ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-3 space-y-3">
+                        {/* Meal Plan selector */}
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-1.5">Meal Plan</p>
+                          {isEditingMessPeriod ? (
+                            <div className="flex gap-2" role="group" aria-label="Meal plan">
+                              {([
+                                { value: 'L',  label: 'Lunch Only',   color: 'blue'   },
+                                { value: 'D',  label: 'Dinner Only',  color: 'purple' },
+                                { value: 'DL', label: 'Both Meals',   color: 'green'  },
+                              ] as const).map(opt => (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => setMessPeriodEditForm(f => ({ ...f, meal_plan: opt.value }))}
+                                  className={`flex-1 py-1.5 text-xs font-semibold rounded border transition-colors ${
+                                    messPeriodEditForm.meal_plan === opt.value
+                                      ? 'bg-primary text-primary-foreground border-primary'
+                                      : 'border-input bg-background hover:bg-accent'
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <MealPlanBadge plan={(messPeriod?.meal_plan ?? selectedStudent.meal_plan) as 'L' | 'D' | 'DL' | undefined} />
+                          )}
+                        </div>
+
+                        {/* Subscription Start */}
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Subscription Start</p>
+                          {isEditingMessPeriod ? (
+                            <input
+                              type="date"
+                              value={messPeriodEditForm.start_date}
+                              onChange={e => setMessPeriodEditForm(f => ({ ...f, start_date: e.target.value }))}
+                              className="w-full px-3 py-1.5 text-sm border border-input rounded bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          ) : (
+                            <p className="font-semibold text-sm">
+                              {messPeriod?.start_date
+                                ? new Date(messPeriod.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                                : 'Not set'}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Subscription End — auto-calculated (not editable) */}
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-1">
+                            Subscription End
+                            <span className="ml-1.5 text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">auto-calculated</span>
+                          </p>
+                          {isEditingMessPeriod && messPeriodEditForm.start_date ? (
+                            <p className="font-semibold text-sm text-muted-foreground italic">
+                              {/* Show the projected end: start + 30 + leave days (leave days fetched on save) */}
+                              {(() => {
+                                const d = new Date(messPeriodEditForm.start_date)
+                                d.setDate(d.getDate() + 29)
+                                return `~${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} + leave days`
+                              })()}
+                            </p>
+                          ) : (
+                            <>
+                              <p className="font-semibold text-sm">
+                                {messPeriod?.end_date
+                                  ? new Date(messPeriod.end_date.split('T')[0]).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                                  : 'Not set'}
+                              </p>
+                              {messPeriod?.end_date && (
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {new Date(messPeriod.end_date).toISOString().split('T')[0] < new Date().toISOString().split('T')[0] ? '⚠️ Subscription expired' : '✓ Active subscription'}
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        {/* Save error */}
+                        {messPeriodSaveError && (
+                          <p className="text-xs text-red-600 dark:text-red-400">{messPeriodSaveError}</p>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Subscription End (from mess_periods) */}
+                    {/* Mess Cycle Tracker */}
                     <div className="bg-muted/50 rounded-lg p-3">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Subscription End</p>
-                      <p className="font-semibold text-sm">
-                        {messPeriod?.end_date 
-                          ? new Date(messPeriod.end_date).toLocaleDateString('en-IN', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric'
-                            })
-                          : 'Not set'}
-                      </p>
-                      {messPeriod?.end_date && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {new Date(messPeriod.end_date) < new Date() 
-                            ? '⚠️ Subscription expired' 
-                            : '✓ Active subscription'}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Active Status Info */}
-                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
-                      <p className="text-xs text-blue-700 dark:text-blue-400">
-                        <strong>Note:</strong> Account status is automatically set to inactive when subscription expires. You can manually override this using the toggle above.
-                      </p>
+                      <p className="text-xs font-medium text-muted-foreground mb-2">30-Day Mess Cycle</p>
+                      <MessCycleTracker startDate={messPeriod?.start_date} />
                     </div>
 
                     {/* Joined Date (Non-editable) */}
@@ -1153,8 +1697,165 @@ export function StudentsList() {
                   </div>
                 </div>
 
-                {/* Right Column - Photo Permission */}
+                {/* Right Column */}
                 <div className="space-y-4">
+
+                  {/* Fee Payment Section */}
+                  <div className="border border-border rounded-xl overflow-hidden">
+                    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-accent/50 to-transparent border-b border-border">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="w-5 h-5 text-primary" />
+                        <h4 className="text-lg font-semibold">Fee Payment</h4>
+                        <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                          {new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' })}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 space-y-3">
+                      {/* Meal Plan + payable summary */}
+                      {(() => {
+                        const mealPlan = (messPeriod?.meal_plan ?? selectedStudent.meal_plan) as 'L' | 'D' | 'DL' | undefined
+                        // Only compute totalPayable when we have a confirmed meal plan
+                        const totalPayable = mealPlan ? getPayableAmount(mealPlan, pricing) : null
+                        const totalPaid = fee.payments.reduce((s, p) => s + Number(p.amount), 0)
+                        const isFullyPaid = totalPayable != null && totalPaid >= totalPayable
+                        const paidInstallments = new Set(fee.payments.map(p => p.installment_number))
+                        const nextInstallment: 1 | 2 = paidInstallments.has(1) ? 2 : 1
+                        return (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Utensils className="w-4 h-4" />
+                                Meal Plan
+                              </div>
+                              <MealPlanBadge plan={mealPlan} />
+                            </div>
+
+                            {/* Payment status */}
+                            <FeePaymentStatus
+                              payments={fee.payments}
+                              isLoading={fee.isLoading}
+                              error={fee.error}
+                              totalPayable={totalPayable}
+                            />
+
+                            {/* Add payment form */}
+                            {fee.showForm && (
+                              <div className="border border-border rounded-lg p-3 space-y-3 bg-muted/30 animate-in slide-in-from-top-2 duration-200">
+                                {/* Info message for 2nd installment */}
+                                {nextInstallment === 2 && totalPayable && (
+                                  <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-2">
+                                    <p className="text-xs text-blue-700 dark:text-blue-400">
+                                      ℹ️ 2nd installment must complete the payment. Required: ₹{Math.max(0, totalPayable - totalPaid).toLocaleString('en-IN')}
+                                    </p>
+                                  </div>
+                                )}
+                                <div>
+                                  <label htmlFor="amount-input" className="text-xs font-medium text-muted-foreground">
+                                    Amount (₹){totalPayable != null ? ` — ${nextInstallment === 2 ? 'Required' : 'Remaining'}: ₹${Math.max(0, totalPayable - totalPaid).toLocaleString('en-IN')}` : ''}
+                                  </label>
+                                  <input
+                                    id="amount-input"
+                                    type="number"
+                                    min={MIN_AMOUNT}
+                                    max={totalPayable != null ? Math.max(0, totalPayable - totalPaid) : MAX_AMOUNT}
+                                    value={fee.formAmount}
+                                    onChange={e => dispatchFee({ type: 'SET_AMOUNT', value: e.target.value })}
+                                    placeholder={totalPayable != null ? `${nextInstallment === 2 ? 'Required' : 'Max'}: ₹${Math.max(0, totalPayable - totalPaid).toLocaleString('en-IN')}` : 'Enter amount'}
+                                    readOnly={nextInstallment === 2}
+                                    className={`w-full mt-1 px-2 py-1.5 text-sm border border-input rounded bg-background focus:outline-none focus:ring-2 focus:ring-primary ${nextInstallment === 2 ? 'cursor-not-allowed opacity-75' : ''}`}
+                                  />
+                                  {nextInstallment === 2 && (
+                                    <p className="text-xs text-muted-foreground mt-1">Amount is fixed for 2nd installment</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="text-xs font-medium text-muted-foreground">Mode</label>
+                                  <div className="flex gap-2 mt-1" role="group" aria-label="Payment mode">
+                                    {(['CASH', 'UPI'] as const).map(mode => (
+                                      <button
+                                        key={mode}
+                                        type="button"
+                                        aria-pressed={fee.formMode === mode}
+                                        onClick={() => dispatchFee({ type: 'SET_MODE', value: mode })}
+                                        className={`flex-1 py-1.5 text-sm rounded border transition-colors ${
+                                          fee.formMode === mode
+                                            ? 'bg-primary text-primary-foreground border-primary'
+                                            : 'border-input bg-background hover:bg-accent'
+                                        }`}
+                                      >
+                                        {mode}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div>
+                                  <label htmlFor="note-input" className="text-xs font-medium text-muted-foreground">
+                                    Note (optional) — {fee.formNote.length}/{MAX_NOTE_LENGTH}
+                                  </label>
+                                  <input
+                                    id="note-input"
+                                    type="text"
+                                    value={fee.formNote}
+                                    onChange={e => dispatchFee({ type: 'SET_NOTE', value: e.target.value })}
+                                    placeholder="e.g. partial payment"
+                                    maxLength={MAX_NOTE_LENGTH}
+                                    className="w-full mt-1 px-2 py-1.5 text-sm border border-input rounded bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                                  />
+                                </div>
+                                {fee.saveError && (
+                                  <p className="text-xs text-red-600 dark:text-red-400">{fee.saveError}</p>
+                                )}
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => dispatchFee({ type: 'CLOSE_FORM' })}
+                                    className="flex-1 py-1.5 text-sm border border-input rounded hover:bg-accent transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleAddPayment}
+                                    disabled={fee.isSaving || !fee.formAmount}
+                                    className="flex-1 py-1.5 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                                  >
+                                    {fee.isSaving ? 'Saving...' : 'Save'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {fee.saveSuccess && (
+                              <p className="text-xs text-green-600 dark:text-green-400 text-center">✓ Payment recorded successfully!</p>
+                            )}
+
+                            {/* Add button — hidden when fully paid */}
+                            {!isFullyPaid && !fee.showForm && (
+                              <button
+                                onClick={() => {
+                                  dispatchFee({ type: 'TOGGLE_FORM' })
+                                  // Pre-fill amount for 2nd installment
+                                  if (nextInstallment === 2 && totalPayable) {
+                                    const remaining = Math.max(0, totalPayable - totalPaid)
+                                    dispatchFee({ type: 'SET_AMOUNT', value: remaining.toString() })
+                                  }
+                                }}
+                                aria-label="Add payment"
+                                className="w-full flex items-center justify-center gap-1 text-xs bg-primary text-primary-foreground px-3 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                {paidInstallments.size === 0 ? 'Add Payment' : 'Add 2nd Installment'}
+                              </button>
+                            )}
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Photo Permission */}
                   <div className="flex items-center gap-2 mb-4">
                     <Shield className="w-5 h-5 text-primary" />
                     <h4 className="text-lg font-semibold">Photo Permission</h4>

@@ -14,19 +14,24 @@ interface LeaveContentProps {
   profile: { id: string; full_name?: string } | null
 }
 
+interface LeaveRecord {
+  leave_id: string
+  start_date: string
+  end_date: string
+  is_approved: boolean
+  rejection_reason?: string | null
+  rejected_at?: string | null
+  auto_adjusted?: boolean
+  created_at: string
+}
+
 export function LeaveContent({ profile }: LeaveContentProps) {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-  const [leaveHistory, setLeaveHistory] = useState<Array<{
-    leave_id: string
-    start_date: string
-    end_date: string
-    is_approved: boolean
-    created_at: string
-  }>>([])
+  const [leaveHistory, setLeaveHistory] = useState<LeaveRecord[]>([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(true)
   const supabase = createClient()
 
@@ -53,14 +58,16 @@ export function LeaveContent({ profile }: LeaveContentProps) {
 
   const validateForm = (): string | null => {
     if (!startDate || !endDate) return 'Please select both start and end dates'
-    const start = new Date(startDate)
-    const end = new Date(endDate)
+    const [sy, sm, sd] = startDate.split('-').map(Number)
+    const [ey, em, ed] = endDate.split('-').map(Number)
+    const start = new Date(sy, sm - 1, sd)
+    const end = new Date(ey, em - 1, ed)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
+    if (end < start) return 'End date must be on or after start date'
     if (start < today) return 'Start date cannot be in the past'
-    if (end < start) return 'End date must be after start date'
-    const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
-    if (daysDiff > 30) return 'Leave duration cannot exceed 30 days'
+    const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+    if (days > 30) return 'Leave duration cannot exceed 30 days'
     return null
   }
 
@@ -103,7 +110,12 @@ export function LeaveContent({ profile }: LeaveContentProps) {
 
   const calculateDays = () => {
     if (!startDate || !endDate) return 0
-    return Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+    const [sy, sm, sd] = startDate.split('-').map(Number)
+    const [ey, em, ed] = endDate.split('-').map(Number)
+    const start = new Date(sy, sm - 1, sd)
+    const end = new Date(ey, em - 1, ed)
+    if (end < start) return 0
+    return Math.round((end.getTime() - start.getTime()) / 86400000) + 1
   }
 
   return (
@@ -192,7 +204,19 @@ export function LeaveContent({ profile }: LeaveContentProps) {
                     <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
                       <Clock className="w-5 h-5 text-white" />
                     </div>
-                    <span className="text-sm font-medium text-muted-foreground">Leave Duration</span>
+                    <div>
+                      <span className="text-sm font-medium text-muted-foreground">Leave Duration</span>
+                      {calculateDays() < 4 && (
+                        <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-0.5">
+                          Min. 4 days needed to extend subscription
+                        </p>
+                      )}
+                      {calculateDays() >= 4 && (
+                        <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
+                          Will extend your subscription by {calculateDays()} days if approved
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <span className="text-3xl font-bold text-primary">
                     {calculateDays()} {calculateDays() === 1 ? 'day' : 'days'}
@@ -248,7 +272,11 @@ export function LeaveContent({ profile }: LeaveContentProps) {
               <p className="text-sm text-muted-foreground">Loading history...</p>
             </div>
           ) : leaveHistory.length > 0 ? (
-            leaveHistory.map((leave, index) => (
+            leaveHistory.map((leave, index) => {
+              const isRejected = !leave.is_approved && leave.rejection_reason
+              const isApproved = leave.is_approved
+              
+              return (
               <div
                 key={leave.leave_id}
                 className="p-5 hover:bg-accent/30 transition-all duration-300 animate-in slide-in-from-right-2"
@@ -257,10 +285,14 @@ export function LeaveContent({ profile }: LeaveContentProps) {
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-center gap-4">
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                      leave.is_approved ? 'bg-green-100 dark:bg-green-950/30' : 'bg-yellow-100 dark:bg-yellow-950/30'
+                      isApproved ? 'bg-green-100 dark:bg-green-950/30' : 
+                      isRejected ? 'bg-red-100 dark:bg-red-950/30' :
+                      'bg-yellow-100 dark:bg-yellow-950/30'
                     }`}>
-                      {leave.is_approved
+                      {isApproved
                         ? <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
+                        : isRejected
+                        ? <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
                         : <Clock className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />}
                     </div>
                     <div>
@@ -268,20 +300,33 @@ export function LeaveContent({ profile }: LeaveContentProps) {
                         {new Date(leave.start_date).toLocaleDateString('en-IN')} - {new Date(leave.end_date).toLocaleDateString('en-IN')}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {Math.ceil((new Date(leave.end_date).getTime() - new Date(leave.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1} days
+                        {(() => {
+                          const [sy, sm, sd] = leave.start_date.split('-').map(Number)
+                          const [ey, em, ed] = leave.end_date.split('-').map(Number)
+                          const d = Math.round((new Date(ey, em-1, ed).getTime() - new Date(sy, sm-1, sd).getTime()) / 86400000) + 1
+                          return `${d} ${d === 1 ? 'day' : 'days'}`
+                        })()}
+                        {leave.auto_adjusted && ' • Auto-adjusted'}
                       </p>
+                      {isRejected && leave.rejection_reason && (
+                        <p className="text-xs text-red-600 dark:text-red-400 mt-1 max-w-xs">
+                          {leave.rejection_reason}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                    leave.is_approved
+                    isApproved
                       ? 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400'
+                      : isRejected
+                      ? 'bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400'
                       : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-400'
                   }`}>
-                    {leave.is_approved ? 'Approved' : 'Pending'}
+                    {isApproved ? 'Approved' : isRejected ? 'Rejected' : 'Pending'}
                   </span>
                 </div>
               </div>
-            ))
+            )})
           ) : (
             <div className="p-16 text-center">
               <Calendar className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />

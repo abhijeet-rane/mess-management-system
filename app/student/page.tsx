@@ -6,6 +6,7 @@ import { useDailyLogs } from '@/hooks/use-daily-logs'
 import { useAllLogs } from '@/hooks/use-all-logs'
 import { useUIStore } from '@/store/ui-store'
 import { useAuthStore } from '@/store/auth-store'
+import { createClient } from '@/lib/supabase/client'
 import { DashboardSidebar, MobileSidebar } from '@/components/shared/dashboard-sidebar'
 import { DashboardHeader } from '@/components/shared/dashboard-header'
 import { StudentDashboardContent } from '@/components/student/dashboard-content'
@@ -60,17 +61,74 @@ export default function StudentDashboard() {
   const [isPageLoading, setIsPageLoading] = useState(true)
   const [showNotifications, setShowNotifications] = useState(false)
   const [now] = useState(() => Date.now())
+  const [messEndDate, setMessEndDate] = useState<string | null>(null)
+  const [messActiveMealPlan, setMessActiveMealPlan] = useState<string | null>(null)
+  const [approvedLeaveDays, setApprovedLeaveDays] = useState<number>(0)
+
+  // Fetch active mess period and approved leave days
+  useEffect(() => {
+    if (!profile?.id) return
+    const supabase = createClient()
+    
+    // Fetch active mess period
+    supabase
+      .from('mess_periods')
+      .select('start_date, end_date, meal_plan')
+      .eq('user_id', profile.id)
+      .eq('is_active', true)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.end_date) setMessEndDate(data.end_date)
+        if (data?.meal_plan) setMessActiveMealPlan(data.meal_plan)
+        
+        // Fetch approved leaves within this mess period
+        if (data?.start_date && data?.end_date) {
+          supabase
+            .from('leaves')
+            .select('start_date, end_date')
+            .eq('user_id', profile.id)
+            .eq('is_approved', true)
+            // Fetch leaves that overlap with the mess period
+            // A leave overlaps if: leave.start_date <= mess.end_date AND leave.end_date >= mess.start_date
+            .lte('start_date', data.end_date)
+            .gte('end_date', data.start_date)
+            .then(({ data: leaves }) => {
+              if (leaves && leaves.length > 0) {
+                // Calculate total leave days (inclusive) within the mess period
+                const totalLeaveDays = leaves.reduce((sum, leave) => {
+                  // Clamp leave dates to mess period boundaries
+                  const leaveStart = new Date(leave.start_date)
+                  const leaveEnd = new Date(leave.end_date)
+                  const messStart = new Date(data.start_date!)
+                  const messEnd = new Date(data.end_date!)
+                  
+                  // Get the overlapping range
+                  const overlapStart = leaveStart > messStart ? leaveStart : messStart
+                  const overlapEnd = leaveEnd < messEnd ? leaveEnd : messEnd
+                  
+                  // Calculate days (inclusive: both start and end dates count)
+                  const days = Math.round((overlapEnd.getTime() - overlapStart.getTime()) / 86400000) + 1
+                  return sum + days
+                }, 0)
+                setApprovedLeaveDays(totalLeaveDays)
+              } else {
+                setApprovedLeaveDays(0)
+              }
+            })
+        }
+      })
+  }, [profile?.id])
 
   useEffect(() => {
     if (profile) setUser(profile)
   }, [profile, setUser])
 
-  // Build subscription-based notifications (pure derivation)
+  // Build subscription-based notifications using mess period end date
   const notifications = useMemo(() => {
     if (!profile?.id) return []
     const items: Array<{ type: string; title: string; message: string; time: string }> = []
-    const daysLeft = profile?.subscription_end_date
-      ? Math.max(0, Math.ceil((new Date(profile.subscription_end_date).getTime() - now) / 86400000))
+    const daysLeft = messEndDate
+      ? Math.max(0, Math.round((new Date(messEndDate).setHours(0,0,0,0) - new Date(new Date(now).toISOString().split('T')[0]).getTime()) / 86400000))
       : 0
 
     if (daysLeft > 0 && daysLeft <= 5) {
@@ -80,7 +138,7 @@ export default function StudentDashboard() {
         message: `Your subscription will expire in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}. Please renew to continue enjoying meals.`,
         time: 'Just now',
       })
-    } else if (daysLeft <= 0 && profile?.subscription_end_date) {
+    } else if (daysLeft <= 0 && messEndDate) {
       items.push({
         type: 'error',
         title: 'Subscription Expired',
@@ -89,7 +147,7 @@ export default function StudentDashboard() {
       })
     }
     return items
-  }, [profile, now])
+  }, [profile?.id, messEndDate, now])
 
   useEffect(() => {
     const timer = setTimeout(() => setIsPageLoading(false), 300)
@@ -104,9 +162,14 @@ export default function StudentDashboard() {
   const todayLogs = logs?.filter(log => log.date === today && log.user_id === profile?.id) || []
   const hasLunch = todayLogs.some(log => log.meal_type === 'LUNCH')
   const hasDinner = todayLogs.some(log => log.meal_type === 'DINNER')
-  const daysRemaining = profile?.subscription_end_date
-    ? Math.max(0, Math.ceil((new Date(profile.subscription_end_date).getTime() - now) / 86400000))
+  
+  // Days remaining calculation
+  // The end_date in mess_periods is already extended by approved leave days
+  // So this calculation already includes leave extensions
+  const daysRemaining = messEndDate
+    ? Math.max(0, Math.round((new Date(messEndDate).setHours(0,0,0,0) - new Date(new Date(now).toISOString().split('T')[0]).getTime()) / 86400000))
     : 0
+  
   const totalMeals = allLogs?.length || 0
 
   if (isPageLoading) {
@@ -173,6 +236,8 @@ export default function StudentDashboard() {
                 totalMeals={totalMeals}
                 onNavigate={setActiveTab}
                 isLoading={profileLoading || logsLoading}
+                messActiveMealPlan={messActiveMealPlan}
+                approvedLeaveDays={approvedLeaveDays}
               />
             )}
             {activeTab === 'parcel' && (

@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import {
-  Clock,
   CheckCircle,
   Utensils,
   User,
@@ -11,8 +10,14 @@ import {
   Sparkles,
   LogOut,
   Hash,
+  CreditCard,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { parseError } from '@/lib/error-handler'
+import { FeePaymentStatus, type FeePayment } from '@/components/shared/fee-payment-status'
+import { MessCycleTracker } from '@/components/shared/mess-cycle-tracker'
+import { getPayableAmount, DEFAULT_PRICING, type MealPlanPricing } from '@/lib/pricing-utils'
+import { SETTINGS_ID } from '@/lib/constants'
 
 interface ProfileContentProps {
   profile: {
@@ -36,11 +41,66 @@ export function ProfileContent({ profile, onSignOut }: ProfileContentProps) {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
-  const supabase = createClient()
+  const [feePayments, setFeePayments] = useState<FeePayment[]>([])
+  const [paymentsLoading, setPaymentsLoading] = useState(true)
+  const [paymentsError, setPaymentsError] = useState<string | null>(null)
+  const [pricing, setPricing] = useState<MealPlanPricing>(DEFAULT_PRICING)
+  const [messPeriod, setMessPeriod] = useState<{ id: string; start_date: string; end_date: string; meal_plan?: string | null } | null>(null)
+  const supabase = useMemo(() => createClient(), [])
+  const isMounted = useRef(true)
 
-  const daysRemaining = profile?.subscription_end_date
-    ? Math.max(0, Math.ceil((new Date(profile.subscription_end_date).getTime() - Date.now()) / 86400000))
-    : 0
+  useEffect(() => {
+    isMounted.current = true
+    return () => { isMounted.current = false }
+  }, [])
+
+  // Fetch pricing, active mess period, and then fee payments
+  useEffect(() => {
+    if (!profile?.id) return
+    Promise.all([
+      supabase
+        .from('mess_settings')
+        .select('lunch_price, dinner_price, both_price')
+        .eq('id', SETTINGS_ID)
+        .single(),
+      supabase
+        .from('mess_periods')
+        .select('id, start_date, end_date, meal_plan')
+        .eq('user_id', profile.id)
+        .eq('is_active', true)
+        .maybeSingle(),
+    ]).then(async ([{ data: ps }, { data: mp }]) => {
+      if (!isMounted.current) return
+      if (ps) {
+        setPricing({
+          lunch_price: ps.lunch_price ?? DEFAULT_PRICING.lunch_price,
+          dinner_price: ps.dinner_price ?? DEFAULT_PRICING.dinner_price,
+          both_price: ps.both_price ?? DEFAULT_PRICING.both_price,
+        })
+      }
+      if (mp?.id && mp?.start_date && mp?.end_date) {
+        setMessPeriod({ id: mp.id, start_date: mp.start_date, end_date: mp.end_date, meal_plan: mp.meal_plan ?? null })
+        setPaymentsLoading(true)
+        setPaymentsError(null)
+        const { data: payData, error: payErr } = await supabase
+          .from('fee_payments')
+          .select('*')
+          .eq('user_id', profile.id)
+          .eq('mess_period_id', mp.id)
+          .order('installment_number', { ascending: true })
+        if (!isMounted.current) return
+        if (payErr) {
+          setPaymentsError(parseError(payErr).message)
+        } else {
+          setFeePayments(payData || [])
+        }
+        setPaymentsLoading(false)
+      } else {
+        setPaymentsLoading(false)
+      }
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id])
 
   const canUpdatePhoto = profile?.photo_update_allowed &&
     profile?.permission_expires_at &&
@@ -223,40 +283,54 @@ export function ProfileContent({ profile, onSignOut }: ProfileContentProps) {
                 <div className="flex items-center gap-2">
                   <Utensils className="w-5 h-5 text-primary" />
                   <p className="font-semibold text-foreground">
-                    {profile?.meal_plan === 'DL' ? 'Lunch & Dinner' :
-                     profile?.meal_plan === 'L' ? 'Lunch Only' :
-                     profile?.meal_plan === 'D' ? 'Dinner Only' : 'Not set'}
+                    {(() => {
+                      const plan = messPeriod?.meal_plan ?? profile?.meal_plan
+                      if (plan === 'DL') return 'Lunch & Dinner'
+                      if (plan === 'L') return 'Lunch Only'
+                      if (plan === 'D') return 'Dinner Only'
+                      return 'Not set'
+                    })()}
                   </p>
                 </div>
               </div>
             </div>
 
+            {/* Fee Payment Section */}
             <div>
-              <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Subscription Status</label>
-              <div className={`p-5 rounded-xl border-2 ${
-                daysRemaining > 7 ? 'bg-green-50 dark:bg-green-950/20 border-green-500/30' :
-                daysRemaining > 3 ? 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-500/30' :
-                'bg-red-50 dark:bg-red-950/20 border-red-500/30'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className={`font-bold text-4xl ${
-                      daysRemaining > 7 ? 'text-green-600 dark:text-green-400' :
-                      daysRemaining > 3 ? 'text-yellow-600 dark:text-yellow-400' :
-                      'text-red-600 dark:text-red-400'
-                    }`}>{daysRemaining}</p>
-                    <p className="text-xs text-muted-foreground mt-1 font-medium">days remaining</p>
+              <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">Fee Payment</label>
+              <div className="rounded-xl border border-border overflow-hidden">
+                <div className="flex items-center px-4 py-3 bg-accent/50 border-b border-border">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-semibold">
+                      {messPeriod
+                        ? `${new Date(messPeriod.start_date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${new Date(messPeriod.end_date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                        : new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' })}
+                    </span>
                   </div>
-                  {daysRemaining > 7 ? (
-                    <CheckCircle className="w-12 h-12 text-green-600 dark:text-green-400" />
-                  ) : daysRemaining > 3 ? (
-                    <Clock className="w-12 h-12 text-yellow-600 dark:text-yellow-400" />
-                  ) : (
-                    <AlertCircle className="w-12 h-12 text-red-600 dark:text-red-400 animate-pulse" />
-                  )}
+                </div>
+                <div className="p-4">
+                  <FeePaymentStatus
+                    payments={feePayments}
+                    isLoading={paymentsLoading}
+                    error={paymentsError}
+                    totalPayable={(() => {
+                      const plan = messPeriod?.meal_plan ?? profile?.meal_plan
+                      return plan ? getPayableAmount(plan, pricing) : null
+                    })()}
+                  />
                 </div>
               </div>
             </div>
+
+            {/* Mess Cycle Tracker */}
+            <div>
+              <label className="block text-xs font-bold text-muted-foreground mb-2 uppercase tracking-wide">30-Day Mess Cycle</label>
+              <div className="p-4 bg-accent/50 rounded-xl border border-border">
+                <MessCycleTracker startDate={messPeriod?.start_date ?? null} />
+              </div>
+            </div>
+
           </div>
 
           <div className="mt-8">
