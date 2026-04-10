@@ -932,34 +932,34 @@ export function AnalyticsDashboard() {
   return (
     <div className="space-y-6">
       {/* Header Actions */}
-      <div className="flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-500">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-500">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="w-5 h-5 text-primary animate-pulse" />
-            <h3 className="text-2xl font-bold">Analytics Overview</h3>
+            <h3 className="text-xl sm:text-2xl font-bold">Analytics Overview</h3>
           </div>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Track your mess performance and insights
           </p>
         </div>
-        <div className="flex gap-2">
-          <div className="relative">
+        <div className="flex gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:flex-initial">
             <button
               onClick={() => setShowDatePicker(!showDatePicker)}
-              className="px-4 py-2 rounded-lg border border-input bg-background hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring transition-all duration-300 flex items-center gap-2 hover:scale-105"
+              className="w-full sm:w-auto px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2 rounded-lg border border-input bg-background hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring transition-all duration-300 flex items-center gap-1.5 sm:gap-2 hover:scale-105 text-xs sm:text-sm"
             >
-              <Calendar className="w-4 h-4" />
-              <span className="capitalize">
+              <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span className="capitalize truncate">
                 {timeRange === '7days' ? 'Last 7 Days' : 
                  timeRange === '15days' ? 'Last 15 Days' : 
                  timeRange === '30days' ? 'Last 30 Days' : 
                  timeRange === '90days' ? 'Last 90 Days' : 
                  'Custom Range'}
               </span>
-              <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showDatePicker ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-3 h-3 sm:w-4 sm:h-4 transition-transform duration-300 ${showDatePicker ? 'rotate-180' : ''}`} />
             </button>
             {showDatePicker && (
-              <div className="absolute top-full mt-2 right-0 w-56 bg-white dark:bg-zinc-900 rounded-lg border border-border shadow-xl z-50 overflow-hidden animate-in slide-in-from-top-2 duration-300">
+              <div className="absolute top-full mt-2 right-0 w-48 sm:w-56 bg-white dark:bg-zinc-900 rounded-lg border border-border shadow-xl z-50 overflow-hidden animate-in slide-in-from-top-2 duration-300">
                 {[
                   { value: '7days', label: 'Last 7 Days', icon: '📅' },
                   { value: '15days', label: 'Last 15 Days', icon: '📆' },
@@ -978,13 +978,13 @@ export function AnalyticsDashboard() {
                         setShowDatePicker(false)
                       }
                     }}
-                    className="w-full px-4 py-2.5 text-left hover:bg-accent transition-colors flex items-center gap-3"
+                    className="w-full px-3 py-2 sm:px-4 sm:py-2.5 text-left hover:bg-accent transition-colors flex items-center gap-2 sm:gap-3 text-xs sm:text-sm"
                     style={{
                       animationDelay: `${index * 50}ms`,
                       animation: 'slideIn 0.3s ease-out forwards'
                     }}
                   >
-                    <span className="text-lg">{range.icon}</span>
+                    <span className="text-base sm:text-lg">{range.icon}</span>
                     <div className="flex-1">
                       <span className={timeRange === range.value ? 'font-semibold' : ''}>
                         {range.label}
@@ -1002,17 +1002,17 @@ export function AnalyticsDashboard() {
             variant="outline" 
             onClick={handleExportReport} 
             disabled={exporting}
-            className="hover:scale-105 transition-all duration-300 group"
+            className="hover:scale-105 transition-all duration-300 group px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2 text-xs sm:text-sm"
           >
             {exporting ? (
               <>
-                <Download className="w-4 h-4 mr-2 animate-bounce" />
-                Exporting...
+                <Download className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 animate-bounce" />
+                <span className="hidden sm:inline">Exporting...</span>
               </>
             ) : (
               <>
-                <Download className="w-4 h-4 mr-2 group-hover:animate-bounce" />
-                Export Report
+                <Download className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 group-hover:animate-bounce" />
+                <span className="hidden sm:inline">Export Report</span>
               </>
             )}
           </Button>

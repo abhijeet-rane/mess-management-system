@@ -73,7 +73,7 @@ export function DashboardHeader({
   const currentTab = tabs.find((t) => t.tab === activeTab)
 
   return (
-    <header className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-border flex-shrink-0 h-[73px] relative overflow-visible z-50">
+    <header className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-border flex-shrink-0 h-14 sm:h-16 md:h-[73px] relative overflow-visible z-50">
       {/* Animated shimmer background */}
       <div
         className="absolute inset-0 bg-gradient-to-r from-transparent via-primary/5 to-transparent animate-shimmer"

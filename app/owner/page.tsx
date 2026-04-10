@@ -9,7 +9,7 @@ import { ProfilePage } from '@/components/owner/profile-page'
 import { OwnerDashboardContent } from '@/components/owner/dashboard-content'
 import { VerifyContent } from '@/components/owner/verify-content'
 import { MenuPhotoPage } from '@/components/owner/menu-photo-page'
-import { DashboardSidebar } from '@/components/shared/dashboard-sidebar'
+import { DashboardSidebar, MobileSidebar } from '@/components/shared/dashboard-sidebar'
 import { DashboardHeader } from '@/components/shared/dashboard-header'
 import { NotificationsContent } from '@/components/shared/notifications-content'
 import type { SidebarNavItem } from '@/components/shared/dashboard-sidebar'
@@ -101,6 +101,8 @@ export default function OwnerDashboard() {
   const [notifications] = useState<Array<{
     type: string; title: string; message: string; time: string
   }>>([])
+  
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const handleSignOut = () => {
     signOut()
@@ -127,6 +129,19 @@ export default function OwnerDashboard() {
         onSignOut={handleSignOut}
       />
 
+      {/* Mobile Sidebar */}
+      <MobileSidebar
+        portalLabel="Owner Portal"
+        navItems={OWNER_NAV_ITEMS}
+        activeTab={activeTab}
+        onTabChange={(tab) => { setActiveTab(tab); setMobileMenuOpen(false) }}
+        profile={profile || null}
+        roleLabel="Owner"
+        isOpen={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        onSignOut={handleSignOut}
+      />
+
       <main className="flex-1 flex flex-col overflow-hidden">
         <DashboardHeader
           tabs={OWNER_HEADER_TABS}
@@ -140,9 +155,11 @@ export default function OwnerDashboard() {
           onToggleSearch={setShowSearch}
           searchActions={SEARCH_ACTIONS}
           onSearchAction={setActiveTab}
+          showMobileMenuButton
+          onMobileMenuOpen={() => setMobileMenuOpen(true)}
         />
 
-        <div className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-zinc-950 flex flex-col">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 bg-gray-50 dark:bg-zinc-950 flex flex-col">
           {activeTab === 'dashboard' && (
             <OwnerDashboardContent stats={todayStats} logs={logs || null} isLoading={isLoading} />
           )}

@@ -138,20 +138,20 @@ export function HistoryContent({ profile }: HistoryContentProps) {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         {STATS.map(({ icon: Icon, badge: Badge, value, label, sub, color }) => (
-          <div key={label} className="relative bg-white dark:bg-zinc-900 rounded-2xl p-5 border border-border shadow-lg hover:shadow-2xl transition-all hover:scale-105 group overflow-hidden">
+          <div key={label} className="relative bg-white dark:bg-zinc-900 rounded-xl sm:rounded-2xl p-3 sm:p-4 md:p-5 border border-border shadow-lg hover:shadow-2xl transition-all hover:scale-105 group overflow-hidden">
             <div className={`absolute inset-0 bg-gradient-to-br ${colorMap[color]} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
             <div className="relative z-10">
-              <div className="flex items-center justify-between mb-3">
-                <div className={`w-12 h-12 ${iconColorMap[color]} border-2 rounded-xl flex items-center justify-center group-hover:scale-110 group-hover:rotate-12 transition-all duration-300`}>
-                  <Icon className="w-6 h-6" />
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <div className={`w-10 h-10 sm:w-12 sm:h-12 ${iconColorMap[color]} border-2 rounded-lg sm:rounded-xl flex items-center justify-center group-hover:scale-110 group-hover:rotate-12 transition-all duration-300`}>
+                  <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
-                <Badge className={`w-5 h-5 ${badgeColorMap[color]}`} />
+                <Badge className={`w-4 h-4 sm:w-5 sm:h-5 ${badgeColorMap[color]}`} />
               </div>
-              <h3 className="text-3xl font-bold mb-1">{value}</h3>
-              <p className="text-sm font-medium text-foreground mb-1">{label}</p>
-              <p className="text-xs text-muted-foreground">{sub}</p>
+              <h3 className="text-2xl sm:text-3xl font-bold mb-1">{value}</h3>
+              <p className="text-xs sm:text-sm font-medium text-foreground mb-1">{label}</p>
+              <p className="text-[10px] sm:text-xs text-muted-foreground">{sub}</p>
             </div>
           </div>
         ))}
@@ -180,7 +180,7 @@ export function HistoryContent({ profile }: HistoryContentProps) {
                 <button
                   key={type}
                   onClick={() => setFilter(type)}
-                  className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                  className={`px-3 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3 rounded-xl font-semibold transition-all duration-300 text-xs sm:text-sm md:text-base ${
                     filter === type
                       ? 'bg-gradient-to-r from-primary to-primary/80 text-white shadow-lg scale-105'
                       : 'bg-accent hover:bg-accent/80 text-foreground hover:scale-105'
@@ -200,7 +200,7 @@ export function HistoryContent({ profile }: HistoryContentProps) {
                 <button
                   key={range}
                   onClick={() => setDateRange(range)}
-                  className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                  className={`px-3 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3 rounded-xl font-semibold transition-all duration-300 text-xs sm:text-sm md:text-base ${
                     dateRange === range
                       ? 'bg-gradient-to-r from-primary to-primary/80 text-white shadow-lg scale-105'
                       : 'bg-accent hover:bg-accent/80 text-foreground hover:scale-105'
@@ -271,7 +271,7 @@ export function HistoryContent({ profile }: HistoryContentProps) {
                   <div className="flex gap-2">
                     {(['newest', 'oldest'] as const).map(order => (
                       <button key={order} onClick={() => setSortOrder(order)}
-                        className={`flex-1 px-4 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                        className={`flex-1 px-3 py-2 sm:px-4 sm:py-3 rounded-xl font-semibold transition-all duration-300 text-xs sm:text-sm ${
                           sortOrder === order ? 'bg-gradient-to-r from-primary to-primary/80 text-white shadow-lg' : 'bg-accent hover:bg-accent/80 text-foreground'
                         }`}
                       >
@@ -285,7 +285,7 @@ export function HistoryContent({ profile }: HistoryContentProps) {
                   <div className="flex gap-2">
                     {(['grouped', 'list'] as const).map(mode => (
                       <button key={mode} onClick={() => setViewMode(mode)}
-                        className={`flex-1 px-4 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                        className={`flex-1 px-3 py-2 sm:px-4 sm:py-3 rounded-xl font-semibold transition-all duration-300 text-xs sm:text-sm ${
                           viewMode === mode ? 'bg-gradient-to-r from-primary to-primary/80 text-white shadow-lg' : 'bg-accent hover:bg-accent/80 text-foreground'
                         }`}
                       >

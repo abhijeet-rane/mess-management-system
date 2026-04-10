@@ -348,3 +348,96 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* Mobile Responsive Utilities */
+@media (max-width: 640px) {
+  /* FORCE small checkboxes on mobile - AGGRESSIVE */
+  input[type="checkbox"],
+  input[type="checkbox"]:checked,
+  input[type="checkbox"]:focus,
+  input[type="checkbox"]:hover,
+  table input[type="checkbox"],
+  td input[type="checkbox"],
+  th input[type="checkbox"] {
+    width: 14px !important;
+    height: 14px !important;
+    min-width: 14px !important;
+    min-height: 14px !important;
+    max-width: 14px !important;
+    max-height: 14px !important;
+    flex-shrink: 0 !important;
+    flex-grow: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    transform: scale(1) !important;
+  }
+  
+  /* Ensure proper touch targets on mobile for other elements */
+  button, a, select, textarea {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Prevent text from being too small */
+  body {
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+  
+  /* Better spacing on mobile */
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* Also target tablet sizes */
+@media (max-width: 768px) {
+  input[type="checkbox"] {
+    width: 14px !important;
+    height: 14px !important;
+    min-width: 14px !important;
+    min-height: 14px !important;
+    max-width: 14px !important;
+    max-height: 14px !important;
+  }
+}
+
+/* Responsive table wrapper */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile-friendly modals */
+@media (max-width: 768px) {
+  .modal-content {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+/* Prevent horizontal scroll */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* Better touch scrolling */
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Responsive grid utilities */
+.grid-responsive {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .grid-responsive {
+    grid-template-columns: 1fr;
+  }
+}

@@ -862,11 +862,11 @@ export function StudentsList() {
           <div className="relative">
             <button
               onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-              className="filter-button px-4 py-2.5 rounded-lg border border-input bg-background hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring transition-all duration-300 flex items-center gap-2"
+              className="filter-button px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 rounded-md sm:rounded-lg border border-input bg-background hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring transition-all duration-300 flex items-center gap-1 sm:gap-1.5 md:gap-2 text-xs sm:text-sm whitespace-nowrap"
             >
-              <span className="capitalize">{filterStatus === 'all' ? 'All Students' : filterStatus}</span>
+              <span className="capitalize text-[11px] sm:text-xs md:text-sm">{filterStatus === 'all' ? 'All' : filterStatus}</span>
               <svg 
-                className={`w-4 h-4 transition-transform duration-300 ${showFilterDropdown ? 'rotate-180' : ''}`}
+                className={`w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 transition-transform duration-300 ${showFilterDropdown ? 'rotate-180' : ''}`}
                 fill="none" 
                 stroke="currentColor" 
                 viewBox="0 0 24 24"
@@ -875,7 +875,7 @@ export function StudentsList() {
               </svg>
             </button>
             {showFilterDropdown && (
-              <div className="filter-dropdown absolute top-full mt-2 right-0 w-48 bg-white dark:bg-zinc-900 rounded-lg border border-border shadow-xl z-10 overflow-hidden animate-in slide-in-from-top-2 duration-300">
+              <div className="filter-dropdown absolute top-full mt-2 left-0 sm:right-0 sm:left-auto min-w-[120px] sm:w-40 md:w-48 bg-white dark:bg-zinc-900 rounded-lg border border-border shadow-xl z-10 overflow-hidden animate-in slide-in-from-top-2 duration-300">
                 {(['all', 'active', 'inactive'] as const).map((status, index) => (
                   <button
                     key={status}
@@ -883,17 +883,17 @@ export function StudentsList() {
                       setFilterStatus(status)
                       setShowFilterDropdown(false)
                     }}
-                    className="w-full px-4 py-2.5 text-left hover:bg-accent transition-colors capitalize flex items-center gap-2"
+                    className="w-full px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 text-left hover:bg-accent transition-colors capitalize flex items-center gap-1.5 text-[11px] sm:text-xs md:text-sm"
                     style={{
                       animationDelay: `${index * 50}ms`,
                       animation: 'slideIn 0.3s ease-out forwards'
                     }}
                   >
                     {filterStatus === status && (
-                      <CheckCircle className="w-4 h-4 text-primary" />
+                      <CheckCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4 text-primary flex-shrink-0" />
                     )}
-                    <span className={filterStatus === status ? 'font-semibold' : ''}>
-                      {status === 'all' ? 'All Students' : status}
+                    <span className={`${filterStatus === status ? 'font-semibold' : ''} whitespace-nowrap`}>
+                      {status === 'all' ? 'All' : status}
                     </span>
                   </button>
                 ))}
@@ -903,10 +903,10 @@ export function StudentsList() {
           <Button 
             variant="outline" 
             onClick={handleExport}
-            className="hover:scale-105 transition-transform duration-300"
+            className="hover:scale-105 transition-transform duration-300 px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 text-xs sm:text-sm h-auto min-h-0"
           >
-            <Download className="w-4 h-4 mr-2" />
-            Export
+            <Download className="w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-4 md:h-4" />
+            <span className="hidden sm:inline ml-1 sm:ml-2">Export</span>
           </Button>
         </div>
       </div>
@@ -954,7 +954,7 @@ export function StudentsList() {
       )}
 
       {/* Stats Summary */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Total Students', value: students.length, color: 'blue' },
           { label: 'Active', value: students.filter(s => s.is_active).length, color: 'green' },
@@ -1000,12 +1000,13 @@ export function StudentsList() {
             <table className="w-full">
               <thead className="bg-muted/50 border-b-2 border-border">
                 <tr>
-                  <th className="px-6 py-4 text-left">
+                  <th className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-left w-8 sm:w-auto">
                     <input
                       type="checkbox"
                       checked={selectedStudents.size === paginatedStudents.length && paginatedStudents.length > 0}
                       onChange={toggleSelectAll}
-                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer transition-all duration-300 hover:scale-110 checked:animate-bounce"
+                      className="w-3 h-3 sm:w-4 sm:h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer transition-all duration-300 hover:scale-110 checked:animate-bounce"
+                      style={{ width: '14px', height: '14px', minWidth: '14px', minHeight: '14px', maxWidth: '14px', maxHeight: '14px' }}
                     />
                   </th>
                   <th 
@@ -1069,12 +1070,13 @@ export function StudentsList() {
                         opacity: 0
                       }}
                     >
-                      <td className="px-6 py-4">
+                      <td className="px-2 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 w-8 sm:w-auto">
                         <input
                           type="checkbox"
                           checked={selectedStudents.has(student.id)}
                           onChange={() => toggleStudentSelection(student.id)}
-                          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer transition-all duration-300 hover:scale-125 checked:animate-bounce"
+                          className="w-3 h-3 sm:w-4 sm:h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer transition-all duration-300 hover:scale-125 checked:animate-bounce"
+                          style={{ width: '14px', height: '14px', minWidth: '14px', minHeight: '14px', maxWidth: '14px', maxHeight: '14px' }}
                           onClick={(e) => e.stopPropagation()}
                         />
                       </td>
@@ -1176,47 +1178,50 @@ export function StudentsList() {
 
             {/* Pagination Controls */}
             {totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-between px-6 py-4 border-t border-border bg-muted/30">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <span>Showing</span>
+              <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 px-3 sm:px-6 py-4 border-t border-border bg-muted/30">
+                <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+                  <span className="hidden sm:inline">Showing</span>
                   <select
                     value={itemsPerPage}
                     onChange={(e) => {
                       setItemsPerPage(Number(e.target.value))
                       setCurrentPage(1)
                     }}
-                    className="px-2 py-1 border border-input rounded bg-background focus:outline-none focus:ring-2 focus:ring-primary transition-all"
+                    className="px-2 py-1 border border-input rounded bg-background focus:outline-none focus:ring-2 focus:ring-primary transition-all text-xs sm:text-sm"
                   >
                     <option value={5}>5</option>
                     <option value={10}>10</option>
                     <option value={20}>20</option>
                     <option value={50}>50</option>
                   </select>
-                  <span>of {sortedStudents.length} students</span>
+                  <span className="text-xs sm:text-sm">of {sortedStudents.length}</span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 sm:gap-2">
                   <button
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={currentPage === 1}
-                    className="px-3 py-1.5 rounded-lg border border-input bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 active:scale-95"
+                    className="px-2 py-1.5 sm:px-3 sm:py-1.5 rounded-lg border border-input bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 active:scale-95 text-xs sm:text-sm"
                   >
-                    Previous
+                    <span className="hidden sm:inline">Previous</span>
+                    <span className="sm:hidden">Prev</span>
                   </button>
 
                   <div className="flex gap-1">
                     {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
                       // Show first page, last page, current page, and pages around current
-                      if (
-                        page === 1 ||
-                        page === totalPages ||
-                        (page >= currentPage - 1 && page <= currentPage + 1)
-                      ) {
+                      // On mobile, show fewer page numbers
+                      const isMobileView = typeof window !== 'undefined' && window.innerWidth < 640
+                      const showPage = isMobileView 
+                        ? (page === 1 || page === totalPages || page === currentPage)
+                        : (page === 1 || page === totalPages || (page >= currentPage - 1 && page <= currentPage + 1))
+                      
+                      if (showPage) {
                         return (
                           <button
                             key={page}
                             onClick={() => setCurrentPage(page)}
-                            className={`w-10 h-10 rounded-lg border transition-all duration-300 ${
+                            className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg border transition-all duration-300 text-xs sm:text-sm ${
                               currentPage === page
                                 ? 'bg-primary text-primary-foreground border-primary shadow-lg scale-110'
                                 : 'border-input bg-background hover:bg-accent hover:scale-105'
@@ -1225,8 +1230,11 @@ export function StudentsList() {
                             {page}
                           </button>
                         )
-                      } else if (page === currentPage - 2 || page === currentPage + 2) {
-                        return <span key={page} className="w-10 h-10 flex items-center justify-center">...</span>
+                      } else if (
+                        (isMobileView && (page === currentPage - 1 || page === currentPage + 1)) ||
+                        (!isMobileView && (page === currentPage - 2 || page === currentPage + 2))
+                      ) {
+                        return <span key={page} className="w-6 h-8 sm:w-10 sm:h-10 flex items-center justify-center text-xs sm:text-sm">...</span>
                       }
                       return null
                     })}
@@ -1235,7 +1243,7 @@ export function StudentsList() {
                   <button
                     onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                     disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 rounded-lg border border-input bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 active:scale-95"
+                    className="px-2 py-1.5 sm:px-3 sm:py-1.5 rounded-lg border border-input bg-background hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 active:scale-95 text-xs sm:text-sm"
                   >
                     Next
                   </button>

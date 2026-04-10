@@ -225,7 +225,7 @@ export default function StudentDashboard() {
           onMobileMenuOpen={() => setMobileMenuOpen(true)}
         />
 
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8 bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 lg:p-8 bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
             {activeTab === 'dashboard' && (
               <StudentDashboardContent

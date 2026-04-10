@@ -184,12 +184,12 @@ export function LeaveRequests() {
       )}
 
       {/* Filter tabs */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {(['pending', 'approved', 'all'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-all ${
+            className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold capitalize transition-all ${
               filter === f
                 ? 'bg-primary text-primary-foreground shadow'
                 : 'bg-white dark:bg-zinc-900 border border-border hover:bg-accent'
@@ -263,7 +263,7 @@ export function LeaveRequests() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {req.is_approved ? (
                       <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400">
                         <CheckCircle className="w-3.5 h-3.5" />
@@ -274,17 +274,17 @@ export function LeaveRequests() {
                         <button
                           onClick={() => handleApprove(req)}
                           disabled={processingId === req.leave_id}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs sm:text-sm font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <CheckCircle className="w-4 h-4" />
+                          <CheckCircle className="w-3 h-3 sm:w-4 sm:h-4" />
                           {processingId === req.leave_id ? 'Approving...' : 'Approve'}
                         </button>
                         <button
                           onClick={() => handleReject(req.leave_id)}
                           disabled={processingId === req.leave_id}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-red-700 dark:text-red-400 text-sm font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2 rounded-lg bg-red-100 hover:bg-red-200 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-red-700 dark:text-red-400 text-xs sm:text-sm font-semibold transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <XCircle className="w-4 h-4" />
+                          <XCircle className="w-3 h-3 sm:w-4 sm:h-4" />
                           Reject
                         </button>
                       </>
