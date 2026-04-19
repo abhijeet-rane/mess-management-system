@@ -3,6 +3,7 @@
 import { LogOut, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { NavItem } from '@/components/shared/nav-item'
+import { StudentAvatar } from '@/components/shared/student-avatar'
 
 export interface SidebarNavItem {
   icon: React.ElementType
@@ -26,8 +27,8 @@ interface DashboardSidebarProps {
   /** User profile data */
   profile: {
     full_name?: string
-    photo_url?: string | null
     unique_short_id?: number
+    photo_path?: string | null
   } | null
   /** User role label (e.g., "Owner", "Student") */
   roleLabel: string
@@ -120,18 +121,15 @@ export function DashboardSidebar({
             <div className="flex items-center gap-3 mb-3 group">
               <div className="relative">
                 <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-primary/10 rounded-full overflow-hidden flex items-center justify-center border-2 border-primary/20 group-hover:border-primary/40 transition-all group-hover:scale-110">
-                  {profile?.photo_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={profile.photo_url}
-                      alt={profile.full_name || roleLabel}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-sm font-bold text-primary">
-                      {profile?.full_name?.charAt(0) || roleLabel.charAt(0)}
-                    </span>
-                  )}
+                  <StudentAvatar
+                    photoPath={profile?.photo_path}
+                    fullName={profile?.full_name}
+                    fallback={
+                      <span className="text-sm font-bold text-primary">
+                        {profile?.full_name?.charAt(0) || roleLabel.charAt(0)}
+                      </span>
+                    }
+                  />
                 </div>
                 <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-zinc-900 animate-pulse" />
               </div>
@@ -242,16 +240,11 @@ export function MobileSidebar({
           <div className="flex items-center gap-3 mb-3">
             <div className="relative">
               <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-primary/10 rounded-full overflow-hidden flex items-center justify-center border-2 border-primary/20">
-                {profile?.photo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={profile.photo_url}
-                    alt={profile.full_name || roleLabel}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <User className="w-5 h-5 text-primary" />
-                )}
+                <StudentAvatar
+                  photoPath={profile?.photo_path}
+                  fullName={profile?.full_name}
+                  fallback={<User className="w-5 h-5 text-primary" />}
+                />
               </div>
               <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-zinc-900 animate-pulse" />
             </div>
